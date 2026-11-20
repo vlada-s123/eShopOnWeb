@@ -7,9 +7,9 @@ using Xunit;
 namespace Microsoft.eShopWeb.FunctionalTests.Web.Controllers;
 
 [Collection("Sequential")]
-public class ManageChangePasswordOnGet : IClassFixture<TestApplication>
+public class ManageChangePasswordOnPost : IClassFixture<TestApplication>
 {
-    public ManageChangePasswordOnGet(TestApplication factory)
+    public ManageChangePasswordOnPost(TestApplication factory)
     {
         Client = factory.CreateClient(new WebApplicationFactoryClientOptions
         {
@@ -22,7 +22,7 @@ public class ManageChangePasswordOnGet : IClassFixture<TestApplication>
     [Fact]
     public async Task ReturnsRedirectGivenAnonymousUser()
     {
-        var response = await Client.GetAsync("/manage/changepassword");
+        var response = await Client.PostAsync("/manage/changepassword", new FormUrlEncodedContent(new Dictionary<string, string>()));
         var redirectLocation = response!.Headers.Location!.OriginalString;
 
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
