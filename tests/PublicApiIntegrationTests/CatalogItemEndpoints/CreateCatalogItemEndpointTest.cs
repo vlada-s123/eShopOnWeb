@@ -1,6 +1,8 @@
-﻿using BlazorShared.Models;
+using BlazorShared.Models;
 using Microsoft.eShopWeb;
+using Microsoft.eShopWeb.PublicApi.CatalogItemEndpoints;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -25,11 +27,15 @@ public class CreateCatalogItemEndpointTest
     {
         var jsonContent = GetValidNewItemJson();
         var token = ApiTokenHelper.GetNormalUserToken();
+        var countBefore = await GetCatalogItemCountAsync();
         var client = ProgramTest.NewClient;
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
         var response = await client.PostAsync("api/catalog-items", jsonContent);
 
         Assert.AreEqual(HttpStatusCode.Forbidden, response.StatusCode);
+
+        var countAfter = await GetCatalogItemCountAsync();
+        Assert.AreEqual(countBefore, countAfter);
     }
 
     [TestMethod]
@@ -49,6 +55,16 @@ public class CreateCatalogItemEndpointTest
         Assert.AreEqual(_testDescription, model.CatalogItem.Description);
         Assert.AreEqual(_testName, model.CatalogItem.Name);
         Assert.AreEqual(_testPrice, model.CatalogItem.Price);
+    }
+
+    private async Task<int> GetCatalogItemCountAsync()
+    {
+        var response = await ProgramTest.NewClient.GetAsync("api/catalog-items");
+        response.EnsureSuccessStatusCode();
+        var stringResponse = await response.Content.ReadAsStringAsync();
+        var model = stringResponse.FromJson<ListPagedCatalogItemResponse>();
+
+        return model!.CatalogItems.Count();
     }
 
     private StringContent GetValidNewItemJson()
