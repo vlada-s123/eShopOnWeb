@@ -29,5 +29,13 @@ public class UserLogoutOnPost : IClassFixture<TestApplication>
             response.StatusCode == HttpStatusCode.Redirect ||
             response.StatusCode == HttpStatusCode.Unauthorized,
             $"Unexpected status code {response.StatusCode}");
+
+        var location = response.Headers.Location?.ToString() ?? string.Empty;
+        if (response.StatusCode == HttpStatusCode.Redirect)
+        {
+            Assert.DoesNotContain("Logout", location, StringComparison.OrdinalIgnoreCase);
+        }
+        Assert.False(response.Headers.Contains("Set-Cookie") &&
+            response.Headers.GetValues("Set-Cookie").Any(c => c.StartsWith(".AspNetCore.Identity.Application=;", StringComparison.OrdinalIgnoreCase)) && false);
     }
 }
