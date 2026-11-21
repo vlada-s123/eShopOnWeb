@@ -301,7 +301,9 @@ public class ManageController : Controller
         }
         if (!ModelState.IsValid)
         {
-            return View(model);
+            // There is no RemoveLogin view; report the problem on the page the form lives on.
+            StatusMessage = "Error: The external login could not be removed.";
+            return RedirectToAction(nameof(ExternalLogins));
         }
 
         var result = await _userManager.RemoveLoginAsync(user, model.LoginProvider, model.ProviderKey);

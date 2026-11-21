@@ -27,5 +27,19 @@ public class CatalogItemGetByIdEndpointTest
         var response = await ProgramTest.NewClient.GetAsync("api/catalog-items/0");
 
         Assert.AreEqual(HttpStatusCode.NotFound, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.AreEqual(string.Empty, body, "A missing item must not return any catalog item payload.");
+    }
+
+    [TestMethod]
+    public async Task ReturnsNotFoundGivenDeletedId()
+    {
+        var item = await CatalogItemTestData.CreateItemAsync("Ephemeral");
+        (await CatalogItemTestData.AdminClient().DeleteAsync($"api/catalog-items/{item.Id}")).EnsureSuccessStatusCode();
+
+        var response = await ProgramTest.NewClient.GetAsync($"api/catalog-items/{item.Id}");
+
+        Assert.AreEqual(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.AreEqual(string.Empty, await response.Content.ReadAsStringAsync());
     }
 }

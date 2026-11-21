@@ -164,6 +164,20 @@ You should be able to make requests to localhost:5106 for the Web project, and l
 
 You can also run the applications by using the instructions located in their `Dockerfile` file in the root of each project. Again, run these commands from the root of the solution (where the .sln file is located).
 
+## Running the tests
+
+```
+dotnet test eShopOnWeb.sln
+```
+
+The integration and functional test projects (`IntegrationTests`, `FunctionalTests`, `PublicApiIntegrationTests`) run against a real SQL Server, not an in-memory database. By default they start a `mcr.microsoft.com/mssql/server:2022-latest` container with [Testcontainers](https://dotnet.testcontainers.org/), so **Docker must be running**. Each test fixture gets its own freshly migrated and seeded databases, and the container is removed when the test run ends.
+
+To use an existing SQL Server instead of Docker (for example a CI service container), set `ESHOP_TEST_SQL_CONNECTION` to a connection string with rights to create databases:
+
+```
+export ESHOP_TEST_SQL_CONNECTION="Server=localhost,1433;User Id=sa;Password=<password>;TrustServerCertificate=True"
+```
+
 ## Community Extensions
 
 We have some great contributions from the community, and while these aren't maintained by Microsoft we still want to highlight them.
