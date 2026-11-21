@@ -1,4 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.eShopWeb.Infrastructure.Data;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace Microsoft.eShopWeb.FunctionalTests.Web.Pages.Basket;
@@ -6,8 +9,11 @@ namespace Microsoft.eShopWeb.FunctionalTests.Web.Pages.Basket;
 [Collection("Sequential")]
 public class CheckoutTest : IClassFixture<TestApplication>
 {
+    private readonly TestApplication _factory;
+
     public CheckoutTest(TestApplication factory)
     {
+        _factory = factory;
         Client = factory.CreateClient(new WebApplicationFactoryClientOptions
         {
             AllowAutoRedirect = true
@@ -64,5 +70,30 @@ public class CheckoutTest : IClassFixture<TestApplication>
 
         Assert.Contains("/Basket/Success", checkOutResponse.RequestMessage!.RequestUri!.ToString());
         Assert.Contains("Thanks for your Order!", stringCheckOutResponse);
+
+        // The order must actually be persisted for the buyer, with the basket line copied onto it.
+        var orders = await _factory.InScopeAsync(sp => sp.GetRequiredService<CatalogContext>().Orders
+            .Include(o => o.OrderItems)
+            .Where(o => o.BuyerId == TestApplication.DemoUserEmail)
+            .ToListAsync());
+        var order = Assert.Single(orders);
+        var line = Assert.Single(order.OrderItems);
+        Assert.Equal(2, line.ItemOrdered.CatalogItemId);
+        Assert.Equal(".NET Black & White Mug", line.ItemOrdered.ProductName);
+        Assert.Equal(1, line.Units);
+        Assert.Equal(8.50m, line.UnitPrice);
+        Assert.Equal(8.50m, order.Total());
+
+        // ... the basket is emptied ...
+        var basketCount = await _factory.InScopeAsync(sp => sp.GetRequiredService<CatalogContext>().Baskets
+            .Include(b => b.Items)
+            .Where(b => b.BuyerId == TestApplication.DemoUserEmail)
+            .SelectMany(b => b.Items)
+            .CountAsync());
+        Assert.Equal(0, basketCount);
+
+        // ... and the order shows up in the buyer's order history.
+        var myOrders = await (await Client.GetAsync("/order/my-orders")).Content.ReadAsStringAsync();
+        Assert.Contains($"/order/detail/{order.Id}\"", myOrders);
     }
 }

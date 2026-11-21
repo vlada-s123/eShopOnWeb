@@ -4,10 +4,10 @@ public static class UrlHelperExtensions
 {
     public static string? EmailConfirmationLink(this IUrlHelper urlHelper, string userId, string code, string scheme)
     {
-        return urlHelper.Action(
-            action: "GET",
-            controller: "ConfirmEmail",
-            values: new { userId, code },
+        return urlHelper.Page(
+            pageName: "/Account/ConfirmEmail",
+            pageHandler: null,
+            values: new { area = "Identity", userId, code },
             protocol: scheme);
     }
 }

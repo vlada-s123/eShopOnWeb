@@ -1,7 +1,6 @@
 ﻿using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.eShopWeb.ApplicationCore.Entities.OrderAggregate;
 using Microsoft.eShopWeb.ApplicationCore.Specifications;
 using Microsoft.eShopWeb.Infrastructure.Data;
@@ -10,19 +9,14 @@ using Xunit;
 
 namespace Microsoft.eShopWeb.IntegrationTests.Repositories.OrderRepositoryTests;
 
-public class GetByIdWithItemsAsync
+public class GetByIdWithItemsAsync : IClassFixture<CatalogDatabaseFixture>
 {
-    private readonly CatalogContext _catalogContext;
-    private readonly EfRepository<Order> _orderRepository;
+    private readonly CatalogDatabaseFixture _database;
     private OrderBuilder OrderBuilder { get; } = new OrderBuilder();
 
-    public GetByIdWithItemsAsync()
+    public GetByIdWithItemsAsync(CatalogDatabaseFixture database)
     {
-        var dbOptions = new DbContextOptionsBuilder<CatalogContext>()
-            .UseInMemoryDatabase(databaseName: "TestCatalog")
-            .Options;
-        _catalogContext = new CatalogContext(dbOptions);
-        _orderRepository = new EfRepository<Order>(_catalogContext);
+        _database = database;
     }
 
     [Fact]
@@ -35,28 +29,37 @@ public class GetByIdWithItemsAsync
         var itemTwoUnits = 5;
 
         var firstOrder = OrderBuilder.WithDefaultValues();
-        _catalogContext.Orders.Add(firstOrder);
-        int firstOrderId = firstOrder.Id;
-
-        var secondOrderItems = new List<OrderItem>();
-        secondOrderItems.Add(new OrderItem(OrderBuilder.TestCatalogItemOrdered, itemOneUnitPrice, itemOneUnits));
-        secondOrderItems.Add(new OrderItem(OrderBuilder.TestCatalogItemOrdered, itemTwoUnitPrice, itemTwoUnits));
+        // Each line needs its own CatalogItemOrdered: it is an EF owned type, and sharing one instance
+        // between two owners silently drops it from one of them on SQL Server (InMemory hid this).
+        var secondOrderItems = new List<OrderItem>
+        {
+            new OrderItem(NewItemOrdered(), itemOneUnitPrice, itemOneUnits),
+            new OrderItem(NewItemOrdered(), itemTwoUnitPrice, itemTwoUnits)
+        };
         var secondOrder = OrderBuilder.WithItems(secondOrderItems);
-        _catalogContext.Orders.Add(secondOrder);
-        int secondOrderId = secondOrder.Id;
 
-        _catalogContext.SaveChanges();
+        await using (var arrange = _database.CreateContext())
+        {
+            arrange.Orders.AddRange(firstOrder, secondOrder);
+            await arrange.SaveChangesAsync();
+        }
+        Assert.NotEqual(firstOrder.Id, secondOrder.Id);
 
-        //Act
-        var spec = new OrderWithItemsByIdSpec(secondOrderId);
-        var orderFromRepo = await _orderRepository.FirstOrDefaultAsync(spec);
+        //Act (fresh context: everything asserted below came back from SQL Server)
+        await using var context = _database.CreateContext();
+        var spec = new OrderWithItemsByIdSpec(secondOrder.Id);
+        var orderFromRepo = await new EfRepository<Order>(context).FirstOrDefaultAsync(spec);
 
         //Assert
-        Assert.Equal(secondOrderId, orderFromRepo.Id);
-        Assert.Equal(secondOrder.OrderItems.Count, orderFromRepo.OrderItems.Count);
-        Assert.Equal(1, orderFromRepo.OrderItems.Count(x => x.UnitPrice == itemOneUnitPrice));
-        Assert.Equal(1, orderFromRepo.OrderItems.Count(x => x.UnitPrice == itemTwoUnitPrice));
-        Assert.Equal(itemOneUnits, orderFromRepo.OrderItems.SingleOrDefault(x => x.UnitPrice == itemOneUnitPrice).Units);
-        Assert.Equal(itemTwoUnits, orderFromRepo.OrderItems.SingleOrDefault(x => x.UnitPrice == itemTwoUnitPrice).Units);
+        Assert.NotNull(orderFromRepo);
+        Assert.Equal(secondOrder.Id, orderFromRepo!.Id);
+        Assert.Equal(2, orderFromRepo.OrderItems.Count);
+        Assert.Equal(itemOneUnits, orderFromRepo.OrderItems.Single(x => x.UnitPrice == itemOneUnitPrice).Units);
+        Assert.Equal(itemTwoUnits, orderFromRepo.OrderItems.Single(x => x.UnitPrice == itemTwoUnitPrice).Units);
+        Assert.All(orderFromRepo.OrderItems, i => Assert.Equal(OrderBuilder.TestProductName, i.ItemOrdered.ProductName));
+        Assert.Equal(itemOneUnitPrice * itemOneUnits + itemTwoUnitPrice * itemTwoUnits, orderFromRepo.Total());
     }
+
+    private CatalogItemOrdered NewItemOrdered() =>
+        new(OrderBuilder.TestCatalogItemId, OrderBuilder.TestProductName, OrderBuilder.TestPictureUri);
 }

@@ -1,6 +1,7 @@
 using Microsoft.eShopWeb;
 using Microsoft.eShopWeb.PublicApi.CatalogTypeEndpoints;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
 
@@ -18,7 +19,9 @@ public class CatalogTypeListEndpointTest
         var model = stringResponse.FromJson<ListCatalogTypesResponse>();
 
         Assert.IsNotNull(model);
-        Assert.IsTrue(model!.CatalogTypes.Count > 0);
+        CollectionAssert.AreEquivalent(
+            new[] { "Mug", "T-Shirt", "Sheet", "USB Memory Stick" },
+            model!.CatalogTypes.Select(t => t.Name).ToArray());
     }
 
     [TestMethod]
@@ -27,5 +30,7 @@ public class CatalogTypeListEndpointTest
         var response = await ProgramTest.NewClient.GetAsync("api/catalog-types/0");
 
         Assert.AreEqual(HttpStatusCode.NotFound, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.IsFalse(body.Contains("catalogTypes"), $"An unmapped route must not fall through to the list endpoint. Body: {body}");
     }
 }

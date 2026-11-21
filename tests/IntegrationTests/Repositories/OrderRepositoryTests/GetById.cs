@@ -1,45 +1,64 @@
-﻿using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.EntityFrameworkCore;
+﻿using System.Threading.Tasks;
 using Microsoft.eShopWeb.ApplicationCore.Entities.OrderAggregate;
 using Microsoft.eShopWeb.Infrastructure.Data;
 using Microsoft.eShopWeb.UnitTests.Builders;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace Microsoft.eShopWeb.IntegrationTests.Repositories.OrderRepositoryTests;
 
-public class GetById
+public class GetById : IClassFixture<CatalogDatabaseFixture>
 {
-    private readonly CatalogContext _catalogContext;
-    private readonly EfRepository<Order> _orderRepository;
+    private readonly CatalogDatabaseFixture _database;
     private OrderBuilder OrderBuilder { get; } = new OrderBuilder();
-    private readonly ITestOutputHelper _output;
-    public GetById(ITestOutputHelper output)
+
+    public GetById(CatalogDatabaseFixture database)
     {
-        _output = output;
-        var dbOptions = new DbContextOptionsBuilder<CatalogContext>()
-            .UseInMemoryDatabase(databaseName: "TestCatalog")
-            .Options;
-        _catalogContext = new CatalogContext(dbOptions);
-        _orderRepository = new EfRepository<Order>(_catalogContext);
+        _database = database;
     }
 
     [Fact]
     public async Task GetsExistingOrder()
     {
-        var existingOrder = OrderBuilder.WithDefaultValues();
-        _catalogContext.Orders.Add(existingOrder);
-        _catalogContext.SaveChanges();
-        int orderId = existingOrder.Id;
-        _output.WriteLine($"OrderId: {orderId}");
+        var orderId = await AddOrderAsync(OrderBuilder.WithDefaultValues());
 
-        var orderFromRepo = await _orderRepository.GetByIdAsync(orderId);
+        await using var context = _database.CreateContext();
+        var orderFromRepo = await new EfRepository<Order>(context).GetByIdAsync(orderId);
+
+        Assert.NotNull(orderFromRepo);
+        Assert.Equal(orderId, orderFromRepo!.Id);
         Assert.Equal(OrderBuilder.TestBuyerId, orderFromRepo.BuyerId);
+        Assert.Equal(new AddressBuilder().TestCity, orderFromRepo.ShipToAddress.City); // owned type is loaded with the order
+    }
 
-        // Note: Using InMemoryDatabase OrderItems is available. Will be null if using SQL DB.
-        // Use the OrderWithItemsByIdSpec instead of just GetById to get the full aggregate
-        var firstItem = orderFromRepo.OrderItems.FirstOrDefault();
-        Assert.Equal(OrderBuilder.TestUnits, firstItem.Units);
+    [Fact]
+    public async Task DoesNotLoadOrderItemsWithoutSpecification()
+    {
+        // On a relational database GetById loads only the order row. Code that needs the lines must use
+        // OrderWithItemsByIdSpec (see GetByIdWithItemsAsync). InMemory used to hide this difference.
+        var orderId = await AddOrderAsync(OrderBuilder.WithDefaultValues());
+
+        await using var context = _database.CreateContext();
+        var orderFromRepo = await new EfRepository<Order>(context).GetByIdAsync(orderId);
+
+        Assert.NotNull(orderFromRepo);
+        Assert.Empty(orderFromRepo!.OrderItems);
+    }
+
+    [Fact]
+    public async Task ReturnsNullGivenUnknownId()
+    {
+        await using var context = _database.CreateContext();
+
+        var orderFromRepo = await new EfRepository<Order>(context).GetByIdAsync(int.MaxValue);
+
+        Assert.Null(orderFromRepo);
+    }
+
+    private async Task<int> AddOrderAsync(Order order)
+    {
+        await using var context = _database.CreateContext();
+        context.Orders.Add(order);
+        await context.SaveChangesAsync();
+        return order.Id;
     }
 }
